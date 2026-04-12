@@ -1,0 +1,188 @@
+{
+  "name": "MedFlow · WF-001 · Confirmação WhatsApp",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "medflow-confirmar",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "node-webhook-001",
+      "name": "Webhook · Receber Agendamento",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "medflow-confirmar"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "mensagem",
+              "value": "=Olá, *{{ $json.body.paciente }}*! 👋\n\nSua consulta foi confirmada com sucesso.\n\n📅 *Data:* {{ $json.body.data }}\n🕐 *Horário:* {{ $json.body.horario }}\n👨‍⚕️ *Médico(a):* {{ $json.body.medico }}\n🏥 *Especialidade:* {{ $json.body.especialidade }}\n\nCaso precise reagendar ou cancelar, responda esta mensagem.\n\n_MedFlow · Sistema de Atendimento_"
+            },
+            {
+              "name": "telefone",
+              "value": "={{ $json.body.telefone }}"
+            },
+            {
+              "name": "paciente_id",
+              "value": "={{ $json.body.paciente_id }}"
+            },
+            {
+              "name": "atendimento_id",
+              "value": "={{ $json.body.atendimento_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-set-001",
+      "name": "Set · Formatar Mensagem",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://graph.facebook.com/v18.0/{{ $vars.WHATSAPP_PHONE_NUMBER_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $vars.WHATSAPP_ACCESS_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": []
+        },
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.telefone.replace(/[^0-9]/g, '') }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": {{ JSON.stringify($json.mensagem) }}\n  }\n}",
+        "options": {}
+      },
+      "id": "node-whatsapp-001",
+      "name": "WhatsApp · Enviar Confirmação",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $vars.MEDFLOW_API_URL }}/atendimentos/{{ $('Set · Formatar Mensagem').item.json.atendimento_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $vars.MEDFLOW_API_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"status_whatsapp\": \"confirmacao_enviada\",\n  \"confirmado_em\": \"{{ new Date().toISOString() }}\",\n  \"whatsapp_message_id\": \"{{ $json.messages[0].id }}\"\n}",
+        "method": "PATCH",
+        "options": {}
+      },
+      "id": "node-patch-001",
+      "name": "HTTP PATCH · Atualizar MedFlow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"message\": \"Confirmação enviada com sucesso\",\n  \"whatsapp_id\": \"{{ $('WhatsApp · Enviar Confirmação').item.json.messages[0].id }}\",\n  \"atendimento_id\": \"{{ $('Set · Formatar Mensagem').item.json.atendimento_id }}\",\n  \"timestamp\": \"{{ new Date().toISOString() }}\"\n}",
+        "options": {}
+      },
+      "id": "node-response-001",
+      "name": "Respond · Sucesso",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": false,\n  \"error\": \"{{ $json.message }}\",\n  \"timestamp\": \"{{ new Date().toISOString() }}\"\n}",
+        "options": {
+          "responseCode": 500
+        }
+      },
+      "id": "node-error-001",
+      "name": "Respond · Erro",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [900, 480]
+    }
+  ],
+  "connections": {
+    "Webhook · Receber Agendamento": {
+      "main": [
+        [{ "node": "Set · Formatar Mensagem", "type": "main", "index": 0 }]
+      ]
+    },
+    "Set · Formatar Mensagem": {
+      "main": [
+        [{ "node": "WhatsApp · Enviar Confirmação", "type": "main", "index": 0 }]
+      ]
+    },
+    "WhatsApp · Enviar Confirmação": {
+      "main": [
+        [{ "node": "HTTP PATCH · Atualizar MedFlow", "type": "main", "index": 0 }]
+      ],
+      "error": [
+        [{ "node": "Respond · Erro", "type": "main", "index": 0 }]
+      ]
+    },
+    "HTTP PATCH · Atualizar MedFlow": {
+      "main": [
+        [{ "node": "Respond · Sucesso", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "tags": ["medflow", "whatsapp", "clinica"],
+  "meta": {
+    "instanceId": "medflow-wf-001"
+  },
+  "_readme": {
+    "descricao": "WF-001 · Confirmação WhatsApp ao confirmar agendamento no MedFlow",
+    "variaveis_necessarias": {
+      "WHATSAPP_PHONE_NUMBER_ID": "ID do número no Meta Business (ex: 123456789)",
+      "WHATSAPP_ACCESS_TOKEN": "Token permanente da WhatsApp Business API",
+      "MEDFLOW_API_URL": "URL base da API do MedFlow (ex: https://api.medflow.com)",
+      "MEDFLOW_API_TOKEN": "Token de autenticação da API MedFlow"
+    },
+    "payload_esperado": {
+      "paciente": "Nome completo do paciente",
+      "paciente_id": "ID interno do paciente",
+      "atendimento_id": "ID do atendimento",
+      "telefone": "+55 11 99999-0000",
+      "data": "07/04/2026",
+      "horario": "09:00",
+      "medico": "Dr. Carlos Neto",
+      "especialidade": "Cardiologia"
+    }
+  }
+}

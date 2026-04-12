@@ -1,0 +1,316 @@
+{
+  "name": "MedFlow · WF-002 · Status em Tempo Real",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "medflow-status",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "node-webhook-002",
+      "name": "Webhook · Mudança de Status",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "medflow-status"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.body.status }}",
+              "operation": "isNotEmpty"
+            },
+            {
+              "value1": "={{ $json.body.atendimento_id }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "node-if-002",
+      "name": "IF · Payload válido?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": false },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.body.status }}",
+                    "rightValue": "em-atendimento",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "em-atendimento"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": false },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.body.status }}",
+                    "rightValue": "concluido",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "concluido"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": false },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.body.status }}",
+                    "rightValue": "cancelado",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "cancelado"
+            }
+          ]
+        },
+        "options": { "fallbackOutput": "extra" }
+      },
+      "id": "node-switch-002",
+      "name": "Switch · Tipo de Status",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [680, 240]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            { "name": "status_label", "value": "Em Atendimento" },
+            { "name": "emoji", "value": "🟡" },
+            { "name": "notificar_paciente", "value": "false" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-set-em-atend",
+      "name": "Set · Em Atendimento",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [900, 140]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            { "name": "status_label", "value": "Concluído" },
+            { "name": "emoji", "value": "🟢" },
+            { "name": "notificar_paciente", "value": "true" },
+            { "name": "mensagem_paciente", "value": "=Olá *{{ $('Webhook · Mudança de Status').item.json.body.paciente }}*! Sua consulta foi concluída. Em caso de dúvidas, entre em contato. 😊" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-set-concluido",
+      "name": "Set · Concluído",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [900, 280]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            { "name": "status_label", "value": "Cancelado" },
+            { "name": "emoji", "value": "🔴" },
+            { "name": "notificar_paciente", "value": "true" },
+            { "name": "mensagem_paciente", "value": "=Olá *{{ $('Webhook · Mudança de Status').item.json.body.paciente }}*! Sua consulta foi cancelada. Entre em contato para reagendar. 📞" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-set-cancelado",
+      "name": "Set · Cancelado",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [900, 420]
+    },
+    {
+      "parameters": {
+        "url": "={{ $vars.MEDFLOW_API_URL }}/atendimentos/{{ $('Webhook · Mudança de Status').item.json.body.atendimento_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $vars.MEDFLOW_API_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"status\": \"{{ $('Webhook · Mudança de Status').item.json.body.status }}\",\n  \"status_label\": \"{{ $json.status_label }}\",\n  \"medico\": \"{{ $('Webhook · Mudança de Status').item.json.body.medico }}\",\n  \"atualizado_em\": \"{{ new Date().toISOString() }}\",\n  \"origem\": \"n8n-wf-002\"\n}",
+        "method": "PATCH",
+        "options": {}
+      },
+      "id": "node-patch-002",
+      "name": "HTTP PATCH · MedFlow API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1120, 280]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.notificar_paciente }}",
+              "value2": "true",
+              "operation": "equals"
+            }
+          ]
+        }
+      },
+      "id": "node-if-notif",
+      "name": "IF · Notificar Paciente?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 460]
+    },
+    {
+      "parameters": {
+        "url": "https://graph.facebook.com/v18.0/{{ $vars.WHATSAPP_PHONE_NUMBER_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $vars.WHATSAPP_ACCESS_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $('Webhook · Mudança de Status').item.json.body.telefone.replace(/[^0-9]/g, '') }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": {{ JSON.stringify($json.mensagem_paciente) }}\n  }\n}",
+        "options": {}
+      },
+      "id": "node-wpp-notif",
+      "name": "WhatsApp · Notificar Paciente",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1340, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"atendimento_id\": \"{{ $('Webhook · Mudança de Status').item.json.body.atendimento_id }}\",\n  \"novo_status\": \"{{ $('Webhook · Mudança de Status').item.json.body.status }}\",\n  \"atualizado_em\": \"{{ new Date().toISOString() }}\"\n}",
+        "options": {}
+      },
+      "id": "node-response-002",
+      "name": "Respond · OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1340, 240]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"success\": false, \"error\": \"Payload inválido — status e atendimento_id são obrigatórios\"}",
+        "options": { "responseCode": 400 }
+      },
+      "id": "node-response-invalid",
+      "name": "Respond · Payload Inválido",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [680, 460]
+    }
+  ],
+  "connections": {
+    "Webhook · Mudança de Status": {
+      "main": [
+        [{ "node": "IF · Payload válido?", "type": "main", "index": 0 }]
+      ]
+    },
+    "IF · Payload válido?": {
+      "main": [
+        [{ "node": "Switch · Tipo de Status", "type": "main", "index": 0 }],
+        [{ "node": "Respond · Payload Inválido", "type": "main", "index": 0 }]
+      ]
+    },
+    "Switch · Tipo de Status": {
+      "main": [
+        [{ "node": "Set · Em Atendimento", "type": "main", "index": 0 }],
+        [{ "node": "Set · Concluído", "type": "main", "index": 0 }],
+        [{ "node": "Set · Cancelado", "type": "main", "index": 0 }]
+      ]
+    },
+    "Set · Em Atendimento": {
+      "main": [
+        [{ "node": "HTTP PATCH · MedFlow API", "type": "main", "index": 0 }]
+      ]
+    },
+    "Set · Concluído": {
+      "main": [
+        [{ "node": "HTTP PATCH · MedFlow API", "type": "main", "index": 0 }],
+        [{ "node": "IF · Notificar Paciente?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Set · Cancelado": {
+      "main": [
+        [{ "node": "HTTP PATCH · MedFlow API", "type": "main", "index": 0 }],
+        [{ "node": "IF · Notificar Paciente?", "type": "main", "index": 0 }]
+      ]
+    },
+    "HTTP PATCH · MedFlow API": {
+      "main": [
+        [{ "node": "Respond · OK", "type": "main", "index": 0 }]
+      ]
+    },
+    "IF · Notificar Paciente?": {
+      "main": [
+        [{ "node": "WhatsApp · Notificar Paciente", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "tags": ["medflow", "status", "tempo-real", "clinica"],
+  "_readme": {
+    "descricao": "WF-002 · Atualiza status do atendimento em tempo real via webhook",
+    "variaveis_necessarias": {
+      "MEDFLOW_API_URL": "URL base da API MedFlow",
+      "MEDFLOW_API_TOKEN": "Token Bearer da API MedFlow",
+      "WHATSAPP_PHONE_NUMBER_ID": "ID do número WhatsApp Business",
+      "WHATSAPP_ACCESS_TOKEN": "Token de acesso WhatsApp Business API"
+    },
+    "payload_esperado": {
+      "atendimento_id": "ATD-2026-00341",
+      "status": "em-atendimento | concluido | cancelado | aguardando",
+      "paciente": "Nome do paciente",
+      "paciente_id": "ID interno",
+      "telefone": "+55 11 99999-0000",
+      "medico": "Dr. Carlos Neto",
+      "timestamp": "2026-04-07T09:00:00Z"
+    }
+  }
+}

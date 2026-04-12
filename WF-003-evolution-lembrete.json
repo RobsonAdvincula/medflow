@@ -1,0 +1,436 @@
+{
+  "name": "MedFlow · WF-003 · Lembrete 24h (Evolution API)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 18 * * *"
+            }
+          ]
+        }
+      },
+      "id": "node-cron-003",
+      "name": "Cron · Todo dia 18:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $vars.MEDFLOW_API_URL }}/agenda",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $vars.MEDFLOW_API_TOKEN }}" }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "data", "value": "={{ $today.plus({days: 1}).toFormat('yyyy-MM-dd') }}" },
+            { "name": "status", "value": "agendado,confirmado" },
+            { "name": "limit", "value": "200" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-get-agenda",
+      "name": "HTTP GET · Agenda de Amanhã",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.total }}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "id": "node-if-agenda",
+      "name": "IF · Há consultas amanhã?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "consultas",
+        "options": {}
+      },
+      "id": "node-split",
+      "name": "Split · Por Paciente",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [900, 220]
+    },
+    {
+      "parameters": {
+        "url": "={{ $vars.EVOLUTION_URL }}/message/sendList/{{ $vars.EVOLUTION_INSTANCE }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $vars.EVOLUTION_API_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"number\": \"{{ $json.paciente_telefone.replace(/[^0-9]/g, '') }}@s.whatsapp.net\",\n  \"title\": \"Lembrete de Consulta 📅\",\n  \"description\": \"Olá *{{ $json.paciente_nome }}*! Você tem uma consulta amanhã:\\n\\n📅 *Data:* {{ $json.data_formatada }}\\n🕐 *Horário:* {{ $json.horario }}\\n👨‍⚕️ *Médico(a):* {{ $json.medico }}\\n🏥 *Especialidade:* {{ $json.especialidade }}\\n📍 *Local:* {{ $json.clinica }}\\n\\nPor favor, confirme sua presença:\",\n  \"buttonText\": \"Ver opções\",\n  \"footerText\": \"MedFlow · Sistema de Atendimento\",\n  \"sections\": [\n    {\n      \"title\": \"Sua resposta\",\n      \"rows\": [\n        {\n          \"title\": \"✅ Confirmar presença\",\n          \"description\": \"Estarei presente na consulta\",\n          \"rowId\": \"confirmar_{{ $json.id }}\"\n        },\n        {\n          \"title\": \"❌ Cancelar consulta\",\n          \"description\": \"Não poderei comparecer\",\n          \"rowId\": \"cancelar_{{ $json.id }}\"\n        },\n        {\n          \"title\": \"🔄 Reagendar\",\n          \"description\": \"Preciso de outro horário\",\n          \"rowId\": \"reagendar_{{ $json.id }}\"\n        }\n      ]\n    }\n  ],\n  \"options\": {\n    \"delay\": 1500,\n    \"presence\": \"composing\"\n  }\n}",
+        "options": {}
+      },
+      "id": "node-evolution-lembrete",
+      "name": "Evolution API · Lembrete com Lista",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1100, 220]
+    },
+    {
+      "parameters": {
+        "url": "={{ $vars.MEDFLOW_API_URL }}/atendimentos/{{ $('Split · Por Paciente').item.json.id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $vars.MEDFLOW_API_TOKEN }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"lembrete_enviado\": true,\n  \"lembrete_enviado_em\": \"{{ new Date().toISOString() }}\"\n}",
+        "method": "PATCH",
+        "options": {}
+      },
+      "id": "node-patch-lembrete",
+      "name": "PATCH · Marcar Lembrete Enviado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1300, 220]
+    },
+    {
+      "parameters": {
+        "amount": 2,
+        "unit": "seconds"
+      },
+      "id": "node-wait",
+      "name": "Wait · 2s anti rate-limit",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1500, 220],
+      "webhookId": "wait-lembrete"
+    },
+
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "medflow-resposta",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "node-webhook-resposta",
+      "name": "Webhook · Resposta do Paciente",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 580],
+      "webhookId": "medflow-resposta",
+      "notes": "Configure este endpoint no painel da Evolution API em: Settings > Webhooks > message.upsert"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "row_id",
+              "value": "={{ $json.body?.message?.listResponseMessage?.singleSelectReply?.selectedRowId || $json.body?.listResponseMessage?.singleSelectReply?.selectedRowId || '' }}"
+            },
+            {
+              "name": "from",
+              "value": "={{ $json.body?.key?.remoteJid || $json.body?.remoteJid || '' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-set-resposta",
+      "name": "Set · Extrair Resposta",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [460, 580]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.row_id }}",
+                    "rightValue": "confirmar_",
+                    "operator": { "type": "string", "operation": "startsWith" }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "confirmou"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.row_id }}",
+                    "rightValue": "cancelar_",
+                    "operator": { "type": "string", "operation": "startsWith" }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "cancelou"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.row_id }}",
+                    "rightValue": "reagendar_",
+                    "operator": { "type": "string", "operation": "startsWith" }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "reagendar"
+            }
+          ]
+        },
+        "options": { "fallbackOutput": "extra" }
+      },
+      "id": "node-switch-resposta",
+      "name": "Switch · Resposta",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [680, 580]
+    },
+    {
+      "parameters": {
+        "url": "={{ $vars.MEDFLOW_API_URL }}/atendimentos/{{ $json.row_id.replace('confirmar_', '') }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $vars.MEDFLOW_API_TOKEN }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"status_paciente\": \"confirmado_whatsapp\", \"confirmado_pelo_paciente_em\": \"{{ new Date().toISOString() }}\"}",
+        "method": "PATCH",
+        "options": {}
+      },
+      "id": "node-patch-confirmou",
+      "name": "PATCH · Confirmado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [900, 480]
+    },
+    {
+      "parameters": {
+        "url": "={{ $vars.MEDFLOW_API_URL }}/atendimentos/{{ $json.row_id.replace('cancelar_', '') }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $vars.MEDFLOW_API_TOKEN }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"status\": \"cancelado\", \"status_paciente\": \"cancelado_whatsapp\", \"cancelado_em\": \"{{ new Date().toISOString() }}\"}",
+        "method": "PATCH",
+        "options": {}
+      },
+      "id": "node-patch-cancelou",
+      "name": "PATCH · Cancelado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [900, 620]
+    },
+    {
+      "parameters": {
+        "url": "={{ $vars.MEDFLOW_API_URL }}/atendimentos/{{ $json.row_id.replace('reagendar_', '') }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $vars.MEDFLOW_API_TOKEN }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"status_paciente\": \"reagendamento_solicitado\", \"reagendamento_solicitado_em\": \"{{ new Date().toISOString() }}\"}",
+        "method": "PATCH",
+        "options": {}
+      },
+      "id": "node-patch-reagendar",
+      "name": "PATCH · Reagendamento",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [900, 760]
+    },
+    {
+      "parameters": {
+        "url": "={{ $vars.EVOLUTION_URL }}/message/sendText/{{ $vars.EVOLUTION_INSTANCE }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $vars.EVOLUTION_API_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"number\": \"{{ $('Set · Extrair Resposta').item.json.from }}\",\n  \"textMessage\": {\n    \"text\": \"✅ *Presença confirmada!*\\n\\nTe esperamos amanhã! Qualquer dúvida, estamos aqui. 😊\\n\\n_MedFlow · Clínica_\"\n  },\n  \"options\": { \"delay\": 1000 }\n}",
+        "options": {}
+      },
+      "id": "node-ack-confirmou",
+      "name": "Evolution · Ack Confirmação",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1120, 480]
+    },
+    {
+      "parameters": {
+        "url": "={{ $vars.EVOLUTION_URL }}/message/sendText/{{ $vars.EVOLUTION_INSTANCE }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $vars.EVOLUTION_API_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"number\": \"{{ $('Set · Extrair Resposta').item.json.from }}\",\n  \"textMessage\": {\n    \"text\": \"❌ *Consulta cancelada.*\\n\\nLamentamos não poder atendê-lo(a). Entre em contato para reagendar:\\n📞 {{ $vars.CLINICA_TELEFONE }}\\n\\n_MedFlow · Clínica_\"\n  },\n  \"options\": { \"delay\": 1000 }\n}",
+        "options": {}
+      },
+      "id": "node-ack-cancelou",
+      "name": "Evolution · Ack Cancelamento",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1120, 620]
+    },
+    {
+      "parameters": {
+        "url": "={{ $vars.EVOLUTION_URL }}/message/sendText/{{ $vars.EVOLUTION_INSTANCE }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $vars.EVOLUTION_API_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"number\": \"{{ $('Set · Extrair Resposta').item.json.from }}\",\n  \"textMessage\": {\n    \"text\": \"🔄 *Reagendamento solicitado!*\\n\\nEm breve nossa equipe entrará em contato para definir um novo horário.\\n📞 {{ $vars.CLINICA_TELEFONE }}\\n\\n_MedFlow · Clínica_\"\n  },\n  \"options\": { \"delay\": 1000 }\n}",
+        "options": {}
+      },
+      "id": "node-ack-reagendar",
+      "name": "Evolution · Ack Reagendamento",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1120, 760]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"received\": true}",
+        "options": {}
+      },
+      "id": "node-respond-resposta",
+      "name": "Respond · Webhook OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [460, 760]
+    }
+  ],
+  "connections": {
+    "Cron · Todo dia 18:00": {
+      "main": [[{ "node": "HTTP GET · Agenda de Amanhã", "type": "main", "index": 0 }]]
+    },
+    "HTTP GET · Agenda de Amanhã": {
+      "main": [[{ "node": "IF · Há consultas amanhã?", "type": "main", "index": 0 }]]
+    },
+    "IF · Há consultas amanhã?": {
+      "main": [[{ "node": "Split · Por Paciente", "type": "main", "index": 0 }]]
+    },
+    "Split · Por Paciente": {
+      "main": [[{ "node": "Evolution API · Lembrete com Lista", "type": "main", "index": 0 }]]
+    },
+    "Evolution API · Lembrete com Lista": {
+      "main": [[{ "node": "PATCH · Marcar Lembrete Enviado", "type": "main", "index": 0 }]]
+    },
+    "PATCH · Marcar Lembrete Enviado": {
+      "main": [[{ "node": "Wait · 2s anti rate-limit", "type": "main", "index": 0 }]]
+    },
+    "Webhook · Resposta do Paciente": {
+      "main": [[{ "node": "Set · Extrair Resposta", "type": "main", "index": 0 }]]
+    },
+    "Set · Extrair Resposta": {
+      "main": [[{ "node": "Switch · Resposta", "type": "main", "index": 0 }]]
+    },
+    "Switch · Resposta": {
+      "main": [
+        [{ "node": "PATCH · Confirmado", "type": "main", "index": 0 }],
+        [{ "node": "PATCH · Cancelado", "type": "main", "index": 0 }],
+        [{ "node": "PATCH · Reagendamento", "type": "main", "index": 0 }]
+      ]
+    },
+    "PATCH · Confirmado": {
+      "main": [[{ "node": "Evolution · Ack Confirmação", "type": "main", "index": 0 }]]
+    },
+    "PATCH · Cancelado": {
+      "main": [[{ "node": "Evolution · Ack Cancelamento", "type": "main", "index": 0 }]]
+    },
+    "PATCH · Reagendamento": {
+      "main": [[{ "node": "Evolution · Ack Reagendamento", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "timezone": "America/Sao_Paulo"
+  },
+  "tags": ["medflow", "evolution-api", "lembrete", "cron", "clinica"],
+  "_readme": {
+    "descricao": "WF-003 · Lembrete 24h com lista interativa via Evolution API. Paciente escolhe: Confirmar, Cancelar ou Reagendar.",
+    "variaveis_n8n": {
+      "EVOLUTION_URL": "http://localhost:8080 ou https://evolution.seudominio.com",
+      "EVOLUTION_INSTANCE": "Nome da instância (ex: clinica-principal)",
+      "EVOLUTION_API_KEY": "API Key global da Evolution (encontrada no .env: AUTHENTICATION_API_KEY)",
+      "MEDFLOW_API_URL": "URL base da API MedFlow",
+      "MEDFLOW_API_TOKEN": "Token Bearer MedFlow",
+      "CLINICA_TELEFONE": "(11) 3333-4444"
+    },
+    "configurar_webhook_evolution": {
+      "passo_1": "Acesse o painel da Evolution API",
+      "passo_2": "Vá em sua instância > Webhooks",
+      "passo_3": "Adicione a URL: https://seu-n8n.com/webhook/medflow-resposta",
+      "passo_4": "Ative o evento: messages.upsert",
+      "passo_5": "Salve e teste respondendo uma lista"
+    },
+    "endpoint_lembrete_manual": "GET /webhook/medflow-teste-lembrete (para forçar execução sem esperar o cron)",
+    "observacoes": [
+      "sendList requer WhatsApp conectado e número válido",
+      "Wait de 2s entre mensagens para respeitar rate limit",
+      "row_id extrai automaticamente o ID do atendimento da resposta",
+      "Funciona com Evolution API v1 e v2"
+    ]
+  }
+}

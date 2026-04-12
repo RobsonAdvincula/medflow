@@ -1,0 +1,162 @@
+{
+  "name": "MedFlow · WF-001 · Confirmação WhatsApp (Evolution API)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "medflow-confirmar",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "node-webhook-001",
+      "name": "Webhook · Receber Agendamento",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "medflow-confirmar"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "mensagem",
+              "value": "=Olá, *{{ $json.body.paciente }}*! 👋\n\nSua consulta foi confirmada com sucesso! ✅\n\n📅 *Data:* {{ $json.body.data }}\n🕐 *Horário:* {{ $json.body.horario }}\n👨‍⚕️ *Médico(a):* {{ $json.body.medico }}\n🏥 *Especialidade:* {{ $json.body.especialidade }}\n\nCaso precise reagendar ou cancelar, responda esta mensagem.\n\n_MedFlow · Sistema de Atendimento_"
+            },
+            {
+              "name": "telefone",
+              "value": "={{ $json.body.telefone.replace(/[^0-9]/g, '') }}"
+            },
+            {
+              "name": "atendimento_id",
+              "value": "={{ $json.body.atendimento_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-set-001",
+      "name": "Set · Formatar Dados",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://evolution.advx.us/message/sendText/medflow",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "orkast123"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"number\": \"{{ $json.telefone }}@s.whatsapp.net\",\n  \"textMessage\": {\n    \"text\": {{ JSON.stringify($json.mensagem) }}\n  },\n  \"options\": {\n    \"delay\": 1000,\n    \"presence\": \"composing\"\n  }\n}",
+        "options": {}
+      },
+      "id": "node-evolution-001",
+      "name": "Evolution API · Enviar Confirmação",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $vars.MEDFLOW_API_URL }}/atendimentos/{{ $('Set · Formatar Dados').item.json.atendimento_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $vars.MEDFLOW_API_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"status_whatsapp\": \"confirmacao_enviada\",\n  \"confirmado_em\": \"{{ new Date().toISOString() }}\"\n}",
+        "method": "PATCH",
+        "options": {}
+      },
+      "id": "node-patch-001",
+      "name": "HTTP PATCH · Atualizar MedFlow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"message\": \"Confirmação enviada via Evolution API\",\n  \"atendimento_id\": \"{{ $('Set · Formatar Dados').item.json.atendimento_id }}\",\n  \"timestamp\": \"{{ new Date().toISOString() }}\"\n}",
+        "options": {}
+      },
+      "id": "node-response-001",
+      "name": "Respond · Sucesso",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": false,\n  \"error\": \"{{ $json.message }}\"\n}",
+        "options": { "responseCode": 500 }
+      },
+      "id": "node-error-001",
+      "name": "Respond · Erro",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [900, 460]
+    }
+  ],
+  "connections": {
+    "Webhook · Receber Agendamento": {
+      "main": [[{ "node": "Set · Formatar Dados", "type": "main", "index": 0 }]]
+    },
+    "Set · Formatar Dados": {
+      "main": [[{ "node": "Evolution API · Enviar Confirmação", "type": "main", "index": 0 }]]
+    },
+    "Evolution API · Enviar Confirmação": {
+      "main": [[{ "node": "Respond · Sucesso", "type": "main", "index": 0 }]],
+      "error": [[{ "node": "Respond · Erro", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "timezone": "America/Sao_Paulo"
+  },
+  "tags": ["medflow", "evolution-api", "whatsapp", "clinica"],
+  "_readme": {
+    "descricao": "WF-001 · Confirmação de agendamento via Evolution API",
+    "variaveis_n8n": {
+      "EVOLUTION_URL": "URL da sua Evolution API (ex: http://localhost:8080 ou https://evolution.seudominio.com)",
+      "EVOLUTION_INSTANCE": "Nome da instância criada na Evolution (ex: clinica-principal)",
+      "EVOLUTION_API_KEY": "API Key global da Evolution API (encontrada no .env ou painel)",
+      "MEDFLOW_API_URL": "URL base da API do MedFlow",
+      "MEDFLOW_API_TOKEN": "Token Bearer da API MedFlow"
+    },
+    "payload_esperado": {
+      "paciente": "Ana Silva",
+      "atendimento_id": "ATD-2026-00341",
+      "telefone": "5511991234567",
+      "data": "08/04/2026",
+      "horario": "09:00",
+      "medico": "Dr. Carlos Neto",
+      "especialidade": "Cardiologia"
+    },
+    "endpoint_webhook": "POST /webhook/medflow-confirmar"
+  }
+}

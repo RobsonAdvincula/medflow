@@ -1,0 +1,440 @@
+{
+  "name": "MedFlow · WF-003 · Lembrete 24h Antes",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 18 * * *"
+            }
+          ]
+        }
+      },
+      "id": "node-cron-003",
+      "name": "Cron · Todo dia 18:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $vars.MEDFLOW_API_URL }}/agenda",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $vars.MEDFLOW_API_TOKEN }}"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "data",
+              "value": "={{ $today.plus({days: 1}).toFormat('yyyy-MM-dd') }}"
+            },
+            {
+              "name": "status",
+              "value": "confirmado,agendado"
+            },
+            {
+              "name": "limit",
+              "value": "200"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-get-agenda",
+      "name": "HTTP GET · Agenda de Amanhã",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.total }}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "id": "node-if-tem-agenda",
+      "name": "IF · Há consultas amanhã?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "consultas",
+        "options": {}
+      },
+      "id": "node-split-003",
+      "name": "SplitInBatches · Por Paciente",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [900, 220]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "mensagem_lembrete",
+              "value": "=Olá, *{{ $json.paciente_nome }}*! 👋\n\nEste é um lembrete da sua consulta *amanhã*:\n\n📅 *Data:* {{ $json.data_formatada }}\n🕐 *Horário:* {{ $json.horario }}\n👨‍⚕️ *Médico(a):* {{ $json.medico }}\n🏥 *Especialidade:* {{ $json.especialidade }}\n📍 *Local:* {{ $json.clinica }}\n\nPor favor, responda:\n✅ *1* — Confirmar presença\n❌ *2* — Cancelar consulta\n\nAguardamos você! 😊\n\n_MedFlow · Clínica_"
+            },
+            {
+              "name": "telefone_limpo",
+              "value": "={{ $json.paciente_telefone.replace(/[^0-9]/g, '') }}"
+            },
+            {
+              "name": "consulta_id",
+              "value": "={{ $json.id }}"
+            },
+            {
+              "name": "paciente_id",
+              "value": "={{ $json.paciente_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-set-lembrete",
+      "name": "Set · Montar Lembrete",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [1100, 220]
+    },
+    {
+      "parameters": {
+        "url": "https://graph.facebook.com/v18.0/{{ $vars.WHATSAPP_PHONE_NUMBER_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $vars.WHATSAPP_ACCESS_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.telefone_limpo }}\",\n  \"type\": \"interactive\",\n  \"interactive\": {\n    \"type\": \"button\",\n    \"body\": {\n      \"text\": {{ JSON.stringify($json.mensagem_lembrete) }}\n    },\n    \"action\": {\n      \"buttons\": [\n        {\n          \"type\": \"reply\",\n          \"reply\": {\n            \"id\": \"confirmar_{{ $json.consulta_id }}\",\n            \"title\": \"✅ Confirmar\"\n          }\n        },\n        {\n          \"type\": \"reply\",\n          \"reply\": {\n            \"id\": \"cancelar_{{ $json.consulta_id }}\",\n            \"title\": \"❌ Cancelar\"\n          }\n        }\n      ]\n    }\n  }\n}",
+        "options": {}
+      },
+      "id": "node-wpp-lembrete",
+      "name": "WhatsApp · Enviar Lembrete Interativo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1300, 220]
+    },
+    {
+      "parameters": {
+        "url": "={{ $vars.MEDFLOW_API_URL }}/atendimentos/{{ $('Set · Montar Lembrete').item.json.consulta_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $vars.MEDFLOW_API_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"lembrete_enviado\": true,\n  \"lembrete_enviado_em\": \"{{ new Date().toISOString() }}\",\n  \"lembrete_whatsapp_id\": \"{{ $json.messages[0].id }}\"\n}",
+        "method": "PATCH",
+        "options": {}
+      },
+      "id": "node-patch-lembrete",
+      "name": "HTTP PATCH · Marcar Lembrete Enviado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1500, 220]
+    },
+    {
+      "parameters": {
+        "amount": 1,
+        "unit": "seconds"
+      },
+      "id": "node-wait-003",
+      "name": "Wait · 1s entre envios",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1500, 380],
+      "webhookId": "wait-lembrete-003"
+    },
+
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "medflow-resposta",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "node-webhook-resposta",
+      "name": "Webhook · Resposta do Paciente",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 560],
+      "webhookId": "medflow-resposta"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.body.button_id }}",
+                    "rightValue": "confirmar_",
+                    "operator": { "type": "string", "operation": "startsWith" }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "confirmou"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.body.button_id }}",
+                    "rightValue": "cancelar_",
+                    "operator": { "type": "string", "operation": "startsWith" }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "cancelou"
+            }
+          ]
+        },
+        "options": { "fallbackOutput": "extra" }
+      },
+      "id": "node-switch-resposta",
+      "name": "Switch · Confirmou ou Cancelou?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [460, 560]
+    },
+    {
+      "parameters": {
+        "url": "={{ $vars.MEDFLOW_API_URL }}/atendimentos/{{ $json.body.button_id.replace('confirmar_', '') }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $vars.MEDFLOW_API_TOKEN }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"status_paciente\": \"confirmado_whatsapp\",\n  \"confirmado_em\": \"{{ new Date().toISOString() }}\"\n}",
+        "method": "PATCH",
+        "options": {}
+      },
+      "id": "node-patch-confirmou",
+      "name": "PATCH · Marcar Confirmado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [700, 480]
+    },
+    {
+      "parameters": {
+        "url": "={{ $vars.MEDFLOW_API_URL }}/atendimentos/{{ $json.body.button_id.replace('cancelar_', '') }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $vars.MEDFLOW_API_TOKEN }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"status\": \"cancelado\",\n  \"status_paciente\": \"cancelado_whatsapp\",\n  \"cancelado_em\": \"{{ new Date().toISOString() }}\"\n}",
+        "method": "PATCH",
+        "options": {}
+      },
+      "id": "node-patch-cancelou",
+      "name": "PATCH · Marcar Cancelado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [700, 640]
+    },
+    {
+      "parameters": {
+        "url": "https://graph.facebook.com/v18.0/{{ $vars.WHATSAPP_PHONE_NUMBER_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $vars.WHATSAPP_ACCESS_TOKEN }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $('Webhook · Resposta do Paciente').item.json.body.from }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"✅ Presença confirmada! Te esperamos amanhã. Qualquer dúvida, estamos aqui. 😊\"\n  }\n}",
+        "options": {}
+      },
+      "id": "node-wpp-ack-confirmou",
+      "name": "WhatsApp · Ack Confirmação",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [940, 480]
+    },
+    {
+      "parameters": {
+        "url": "https://graph.facebook.com/v18.0/{{ $vars.WHATSAPP_PHONE_NUMBER_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $vars.WHATSAPP_ACCESS_TOKEN }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $('Webhook · Resposta do Paciente').item.json.body.from }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"❌ Consulta cancelada. Lamentamos não poder atendê-lo(a). Entre em contato para reagendar: {{ $vars.MEDFLOW_TELEFONE_CLINICA }}\"\n  }\n}",
+        "options": {}
+      },
+      "id": "node-wpp-ack-cancelou",
+      "name": "WhatsApp · Ack Cancelamento",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [940, 640]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"received\": true}",
+        "options": {}
+      },
+      "id": "node-response-resposta",
+      "name": "Respond · Webhook OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [460, 760]
+    }
+  ],
+  "connections": {
+    "Cron · Todo dia 18:00": {
+      "main": [
+        [{ "node": "HTTP GET · Agenda de Amanhã", "type": "main", "index": 0 }]
+      ]
+    },
+    "HTTP GET · Agenda de Amanhã": {
+      "main": [
+        [{ "node": "IF · Há consultas amanhã?", "type": "main", "index": 0 }]
+      ]
+    },
+    "IF · Há consultas amanhã?": {
+      "main": [
+        [{ "node": "SplitInBatches · Por Paciente", "type": "main", "index": 0 }]
+      ]
+    },
+    "SplitInBatches · Por Paciente": {
+      "main": [
+        [{ "node": "Set · Montar Lembrete", "type": "main", "index": 0 }]
+      ]
+    },
+    "Set · Montar Lembrete": {
+      "main": [
+        [{ "node": "WhatsApp · Enviar Lembrete Interativo", "type": "main", "index": 0 }]
+      ]
+    },
+    "WhatsApp · Enviar Lembrete Interativo": {
+      "main": [
+        [{ "node": "HTTP PATCH · Marcar Lembrete Enviado", "type": "main", "index": 0 }]
+      ]
+    },
+    "HTTP PATCH · Marcar Lembrete Enviado": {
+      "main": [
+        [{ "node": "Wait · 1s entre envios", "type": "main", "index": 0 }]
+      ]
+    },
+    "Webhook · Resposta do Paciente": {
+      "main": [
+        [{ "node": "Switch · Confirmou ou Cancelou?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Switch · Confirmou ou Cancelou?": {
+      "main": [
+        [{ "node": "PATCH · Marcar Confirmado", "type": "main", "index": 0 }],
+        [{ "node": "PATCH · Marcar Cancelado", "type": "main", "index": 0 }]
+      ]
+    },
+    "PATCH · Marcar Confirmado": {
+      "main": [
+        [{ "node": "WhatsApp · Ack Confirmação", "type": "main", "index": 0 }]
+      ]
+    },
+    "PATCH · Marcar Cancelado": {
+      "main": [
+        [{ "node": "WhatsApp · Ack Cancelamento", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "timezone": "America/Sao_Paulo"
+  },
+  "tags": ["medflow", "lembrete", "whatsapp", "cron", "clinica"],
+  "_readme": {
+    "descricao": "WF-003 · Envia lembretes 24h antes das consultas e processa resposta do paciente",
+    "variaveis_necessarias": {
+      "MEDFLOW_API_URL": "URL base da API MedFlow (ex: https://api.medflow.com)",
+      "MEDFLOW_API_TOKEN": "Token Bearer da API MedFlow",
+      "WHATSAPP_PHONE_NUMBER_ID": "ID do número WhatsApp Business",
+      "WHATSAPP_ACCESS_TOKEN": "Token permanente WhatsApp Business API",
+      "MEDFLOW_TELEFONE_CLINICA": "Telefone da clínica para cancelamentos (ex: (11) 3333-4444)"
+    },
+    "resposta_esperada_agenda": {
+      "total": 18,
+      "consultas": [
+        {
+          "id": "ATD-2026-00341",
+          "paciente_id": "P-00124",
+          "paciente_nome": "Ana Silva",
+          "paciente_telefone": "+5511991234567",
+          "data_formatada": "08/04/2026",
+          "horario": "09:00",
+          "medico": "Dr. Carlos Neto",
+          "especialidade": "Cardiologia",
+          "clinica": "Clínica Central"
+        }
+      ]
+    },
+    "webhook_resposta_payload": {
+      "button_id": "confirmar_ATD-2026-00341 ou cancelar_ATD-2026-00341",
+      "from": "5511991234567",
+      "paciente_nome": "Ana Silva",
+      "timestamp": "2026-04-07T19:30:00Z"
+    },
+    "observacoes": [
+      "O Cron dispara todo dia às 18:00 (fuso America/Sao_Paulo)",
+      "Wait de 1s entre envios para evitar rate limit da API do WhatsApp",
+      "Botões interativos requerem aprovação de template na Meta Business",
+      "O webhook de resposta deve ser configurado no painel Meta Webhooks"
+    ]
+  }
+}
