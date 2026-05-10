@@ -1,0 +1,5 @@
+# Workflows com credenciais reais
+*.json
+
+# OS
+.DS_Store
