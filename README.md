@@ -24,6 +24,22 @@ Tudo integrado num dashboard web para a equipa da clínica.
 
 ---
 
+## Resultados
+
+| Métrica | Antes | Depois |
+|---------|-------|--------|
+| Confirmações | Telefone manual, 1 a 1 | WhatsApp automático |
+| Lembretes | Dependente de quem estava de turno | 24h antes, sem falhas |
+| Esforço da equipa | Horas/semana em chamadas | Zero para confirmações standard |
+| Disponibilidade | Horário de trabalho | 24/7 |
+
+- **3 workflows** em produção (confirmação + status + lembrete)
+- **Zero intervenção manual** para o ciclo de confirmação standard
+- **Dashboard web** para a equipa gerir e consultar o estado em tempo real
+- Código de cliente omitido — implementação de referência disponível a pedido
+
+---
+
 ## Arquitectura
 
 ```
